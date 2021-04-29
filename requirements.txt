@@ -1,0 +1,8 @@
+click
+pyfiglet
+pandas
+numpy
+yfinance
+pandas-market-calendars
+plotly
+yaspin
