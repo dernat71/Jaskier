@@ -8,7 +8,8 @@ from pathlib import Path
 import click
 from .__init__ import __version__
 
-from .financial import run_date_to_date_performances_analysis
+from jaskier.financial import compute_portfolio_performances
+from jaskier.renders import make_graphs
 from .utils import print_figlet, Context
 
 
@@ -74,20 +75,24 @@ def run_performances_analysis(
     Run a performance analysis of the portfolio defined by the positions_file CSV file between
     the start and end date against the benchmark symbol given.
     """
+    print_figlet()
+
     if start is not None:
         start = date_parser.parse(start)
-    
+
     if end is not None:
         end = date_parser.parse(end)
 
-    performances_analysis = run_date_to_date_performances_analysis(ctx=ctx,
-                                                                   positions_tracking_file=Path(positions_file),
-                                                                   start_analysis_at=start,
-                                                                   end_analysis_at=end,
-                                                                   benchmark=benchmark)
-    
-    print(performances_analysis.info())
+    df_global_portfolio_performances = compute_portfolio_performances(
+        ctx=ctx,
+        positions_tracking_file=Path(positions_file),
+        start_analysis_at=start,
+        end_analysis_at=end,
+        benchmark=benchmark,
+    )
 
+    dashboard_figure = make_graphs(df_global_portfolio_performances)
+    dashboard_figure.show()
 
 
 @cli.command()

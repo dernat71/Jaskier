@@ -1,13 +1,12 @@
 import logging
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 
 import pandas as pd
 import numpy as np
 import datetime
 import yfinance as yf
 from yaspin import yaspin
-from yaspin.spinners import Spinners
 import pandas_market_calendars as mcal
 
 from jaskier.defaults import (
@@ -32,12 +31,17 @@ def create_market_cal(start, end):
     return market_cal
 
 
-def get_data(stocks: List[str], start: datetime.datetime, end: datetime.datetime) -> pd.DataFrame:
+def get_data(
+    stocks: List[str], start: datetime.datetime, end: datetime.datetime
+) -> pd.DataFrame:
     def data(ticker):
-        df = yf.download(ticker, start=start, end=(end + datetime.timedelta(days=1)), progress=False)
+        df = yf.download(
+            ticker, start=start, end=(end + datetime.timedelta(days=1)), progress=False
+        )
         df["symbol"] = ticker
         df.index = pd.to_datetime(df.index)
         return df
+
     datas = map(data, stocks)
     return pd.concat(datas, keys=stocks, names=["Ticker", "Date"], sort=True)
 
@@ -237,28 +241,34 @@ def per_day_portfolio_calcs(
 
 
 def run_date_to_date_performances_analysis(
-    ctx: Context,
     positions_tracking_file: Path,
     start_analysis_at: datetime.datetime = None,
     end_analysis_at: datetime.datetime = None,
+    ctx: Context = None,
     benchmark: str = DEFAULT_BENCHMARK,
 ) -> pd.DataFrame:
 
     # Read positions data
     portfolio_df = pd.read_csv(positions_tracking_file)
-    portfolio_df["Open date"] = pd.to_datetime(portfolio_df["Open date"])
+    portfolio_df["Open date"] = pd.to_datetime(portfolio_df["Open date"], dayfirst=True)
+    portfolio_df["Adj cost per share"] = portfolio_df["Adj cost"] / portfolio_df["Qty"]
+    portfolio_df["Type"] = portfolio_df["Type"].str.strip()
 
     # if start_analysis_at or end_analysis_at are None, resolve values
     # based on positions mins and today's date
     if start_analysis_at is None:
-        start_analysis_at = portfolio_df["Open date"].min()
+        start_analysis_at = portfolio_df["Open date"].min() - datetime.timedelta(days=1)
 
     if end_analysis_at is None:
         end_analysis_at = datetime.datetime.now().date()
-    
-    if ctx.verbose:
-        logger.log(level=logging.INFO, msg=f"Using start_analysis_at as: {start_analysis_at}")
-        logger.log(level=logging.INFO, msg=f"Using end_analysis_at as: {end_analysis_at}")
+
+    if ctx and ctx.verbose:
+        logger.log(
+            level=logging.INFO, msg=f"Using start_analysis_at as: {start_analysis_at}"
+        )
+        logger.log(
+            level=logging.INFO, msg=f"Using end_analysis_at as: {end_analysis_at}"
+        )
 
     # Extract Symbols
     symbols = portfolio_df.Symbol.unique()
@@ -288,3 +298,91 @@ def run_date_to_date_performances_analysis(
         )
 
     return combined_df
+
+
+def get_last_fully_defined_day(performances_analysis: pd.DataFrame) -> pd.DataFrame:
+    backward_counter = 1
+    while True:
+        df_yesterday = performances_analysis[
+            performances_analysis["Date Snapshot"]
+            == performances_analysis["Date Snapshot"].unique()[-backward_counter]
+        ]
+        if df_yesterday[["Ticker Return"]].isna().values.any():
+            backward_counter += 1
+        else:
+            break
+    return df_yesterday
+
+
+def get_portfolio_level_performances(
+    df_performances_d_day: pd.DataFrame,
+) -> Dict[str, Any]:
+    evaluation_date = df_performances_d_day["Date Snapshot"].values[0]
+    if not df_performances_d_day[["Ticker Return"]].isna().values.any():
+        total_value_currently_invested = df_performances_d_day["Adj cost"].sum()
+        current_portfolio_valuation = df_performances_d_day["Adj cost daily"].sum()
+        current_roi = (
+            df_performances_d_day["Adj cost daily"].sum()
+            / df_performances_d_day["Adj cost"].sum()
+        ) - 1
+        current_pl = current_portfolio_valuation - total_value_currently_invested
+        first_investment_date = df_performances_d_day["Open date"].min()
+        timedelta_between_first_date_and_now = evaluation_date - first_investment_date
+
+        if timedelta_between_first_date_and_now.days != 0:
+            estimated_daily_roi = (
+                (current_roi + 1) ** (1 / timedelta_between_first_date_and_now.days)
+            ) - 1
+            estimated_annual_roi = ((estimated_daily_roi + 1) ** (365)) - 1
+        else:
+            estimated_daily_roi = None
+            estimated_annual_roi = None
+
+        return {
+            "Date Snapshot": evaluation_date,
+            "total_value_currently_invested": total_value_currently_invested,
+            "current_portfolio_valuation": current_portfolio_valuation,
+            "current_roi": current_roi,
+            "current_pl": current_pl,
+            "estimated_annual_roi": estimated_annual_roi,
+        }
+    else:
+        return {
+            "Date Snapshot": evaluation_date,
+            "total_value_currently_invested": None,
+            "current_portfolio_valuation": None,
+            "current_roi": None,
+            "current_pl": None,
+            "estimated_annual_roi": None,
+        }
+
+
+def get_global_portfolio_level_performances(
+    performances_analysis: pd.DataFrame,
+) -> pd.DataFrame:
+    results = []
+    for date in performances_analysis["Date Snapshot"].unique():
+        df_day = performances_analysis[performances_analysis["Date Snapshot"] == date]
+        results.append(get_portfolio_level_performances(df_performances_d_day=df_day))
+    return pd.DataFrame(results).set_index("Date Snapshot")
+
+
+def compute_portfolio_performances(
+    positions_tracking_file: Path,
+    start_analysis_at: datetime.datetime = None,
+    end_analysis_at: datetime.datetime = None,
+    ctx: Context = None,
+    benchmark: str = DEFAULT_BENCHMARK,
+) -> pd.DataFrame:
+
+    performances_analysis = run_date_to_date_performances_analysis(
+        ctx=ctx,
+        positions_tracking_file=Path(positions_tracking_file),
+        start_analysis_at=start_analysis_at,
+        end_analysis_at=end_analysis_at,
+        benchmark=benchmark,
+    )
+
+    return get_global_portfolio_level_performances(
+        performances_analysis=performances_analysis
+    )

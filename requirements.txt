@@ -6,3 +6,5 @@ yfinance
 pandas-market-calendars
 plotly
 yaspin
+scipy
+nbformat

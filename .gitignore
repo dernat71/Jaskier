@@ -104,3 +104,9 @@ ENV/
 
 # JetBrains
 .idea
+
+# VSCode
+.vscode
+
+#MacOs
+.DS_Store
