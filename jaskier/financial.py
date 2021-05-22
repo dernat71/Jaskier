@@ -1,7 +1,10 @@
+from datetime import datetime
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List
 
+from dotenv import load_dotenv
 import pandas as pd
 import numpy as np
 import datetime
@@ -16,11 +19,14 @@ from jaskier.defaults import (
 )
 
 from jaskier.utils import Context
-
+from jaskier.data_loader import AlphaVantageDataRetriever
 
 # Generate a logger
 logger = logging.getLogger(__name__)
 
+# Retrieve API credentials
+load_dotenv()
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
 def create_market_cal(start, end):
     nyse = mcal.get_calendar(TRADING_CALENDAR_LOCATION)
@@ -31,23 +37,14 @@ def create_market_cal(start, end):
     return market_cal
 
 
-def get_data(
-    stocks: List[str], start: datetime.datetime, end: datetime.datetime
-) -> pd.DataFrame:
-    def data(ticker):
-        df = yf.download(
-            ticker, start=start, end=(end + datetime.timedelta(days=1)), progress=False
-        )
-        df["symbol"] = ticker
-        df.index = pd.to_datetime(df.index)
-        return df
-
-    datas = map(data, stocks)
-    return pd.concat(datas, keys=stocks, names=["Ticker", "Date"], sort=True)
+def get_data(stocks: List[str], start: datetime.datetime, end: datetime.datetime) -> pd.DataFrame:
+    av_client = AlphaVantageDataRetriever(api_key=ALPHA_VANTAGE_API_KEY)
+    data = av_client.get_ticker_daily(symbols=stocks, start=start, end=end)
+    return data
 
 
-def get_benchmark(benchmark, start, end):
-    benchmark = get_data(benchmark, start, end)
+def get_benchmark(benchmark, start: datetime.datetime, end: datetime.datetime):
+    benchmark = get_data(benchmark, start=start, end=end)
     benchmark = benchmark.drop(["symbol"], axis=1)
     benchmark.reset_index(inplace=True)
     return benchmark
@@ -170,32 +167,17 @@ def portfolio_end_of_year_stats(portfolio, adj_close_end):
 
 # Merge the overall dataframe with the adj close start of year dataframe for YTD tracking of tickers.
 def portfolio_start_of_year_stats(portfolio, adj_close_start):
-    adj_close_start = adj_close_start[
-        adj_close_start["Date"] == adj_close_start["Date"].min()
-    ]
-    portfolio_start = pd.merge(
-        portfolio,
-        adj_close_start[["Ticker", "Close", "Date"]],
-        left_on="Symbol",
-        right_on="Ticker",
-    )
-    portfolio_start.rename(columns={"Close": "Ticker Start Date Close"}, inplace=True)
-    portfolio_start["Adj cost per share"] = np.where(
-        portfolio_start["Open date"] <= portfolio_start["Date"],
-        portfolio_start["Ticker Start Date Close"],
-        portfolio_start["Adj cost per share"],
-    )
-    portfolio_start["Adj cost"] = (
-        portfolio_start["Adj cost per share"] * portfolio_start["Qty"]
-    )
-    portfolio_start = portfolio_start.drop(["Ticker", "Date"], axis=1)
-    portfolio_start["Equiv Benchmark Shares"] = (
-        portfolio_start["Adj cost"] / portfolio_start["Benchmark Start Date Close"]
-    )
-    portfolio_start["Benchmark Start Date Cost"] = (
-        portfolio_start["Equiv Benchmark Shares"]
-        * portfolio_start["Benchmark Start Date Close"]
-    )
+    adj_close_start = adj_close_start[adj_close_start['Date'] == adj_close_start['Date'].min()]
+    portfolio_start = pd.merge(portfolio, adj_close_start[['Ticker', 'Close', 'Date']],
+                                    left_on='Symbol', right_on='Ticker')
+    portfolio_start.rename(columns={'Close': 'Ticker Start Date Close'}, inplace=True)
+    portfolio_start['Adj cost per share'] = np.where(portfolio_start['Open date'] <= portfolio_start['Date'],
+                                                          portfolio_start['Ticker Start Date Close'],
+                                                          portfolio_start['Adj cost per share'])
+    portfolio_start['Adj cost'] = portfolio_start['Adj cost per share'] * portfolio_start['Qty']
+    portfolio_start = portfolio_start.drop(['Ticker', 'Date'], axis=1)
+    portfolio_start['Equiv Benchmark Shares'] = portfolio_start['Adj cost'] / portfolio_start['Benchmark Start Date Close']
+    portfolio_start['Benchmark Start Date Cost'] = portfolio_start['Equiv Benchmark Shares'] * portfolio_start['Benchmark Start Date Close']
     return portfolio_start
 
 
