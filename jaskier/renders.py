@@ -7,7 +7,7 @@ def make_graphs(df_global_portfolio_performances: pd.DataFrame) -> go.Figure:
 
     min_date = df_global_portfolio_performances.index.min().strftime("%d-%m-%Y")
     max_date = df_global_portfolio_performances.index.max().strftime("%d-%m-%Y")
-    last_state_values = df_global_portfolio_performances.tail(1)
+    last_state_values = df_global_portfolio_performances.tail(5).dropna()
 
     fig = make_subplots(
         rows=3,
@@ -39,7 +39,7 @@ def make_graphs(df_global_portfolio_performances: pd.DataFrame) -> go.Figure:
     fig.add_trace(
         go.Indicator(
             mode="number",
-            value=int(last_state_values.total_value_currently_invested.values[0]),
+            value=int(last_state_values.total_value_currently_invested.values[-1]),
             title={"text": "Amount invested"},
         ),
         row=1,
@@ -49,7 +49,7 @@ def make_graphs(df_global_portfolio_performances: pd.DataFrame) -> go.Figure:
     fig.add_trace(
         go.Indicator(
             mode="number",
-            value=int(last_state_values.current_portfolio_valuation.values[0]),
+            value=int(last_state_values.current_portfolio_valuation.values[-1]),
             title={"text": "Current valuation"},
             domain={"x": [0.05, 0.5], "y": [0.15, 0.35]},
         ),
@@ -60,7 +60,7 @@ def make_graphs(df_global_portfolio_performances: pd.DataFrame) -> go.Figure:
     fig.add_trace(
         go.Indicator(
             mode="number",
-            value=round(last_state_values.current_roi.values[0] * 100, 2),
+            value=round(last_state_values.current_roi.values[-1] * 100, 2),
             title={"text": "Current ROI"},
             domain={"x": [0.05, 0.5], "y": [0.15, 0.35]},
         ),
@@ -71,7 +71,7 @@ def make_graphs(df_global_portfolio_performances: pd.DataFrame) -> go.Figure:
     fig.add_trace(
         go.Indicator(
             mode="number",
-            value=round(last_state_values.current_pl.values[0], 2),
+            value=round(last_state_values.current_pl.values[-1], 2),
             title={"text": "Current P&L"},
             domain={"x": [0.05, 0.5], "y": [0.15, 0.35]},
         ),

@@ -6,11 +6,11 @@ from dateutil import parser as date_parser
 import logging
 from pathlib import Path
 import click
-from .__init__ import __version__
 
+from jaskier import __version__
 from jaskier.financial import compute_portfolio_performances
 from jaskier.renders import make_graphs
-from .utils import print_figlet, Context
+from jaskier.utils import print_figlet, Context
 
 
 LOGGING_LEVELS = {
@@ -101,3 +101,7 @@ def version(ctx: Context):
     """Get the library version."""
     print_figlet()
     click.echo(click.style(f"{__version__}", bold=True))
+
+
+if __name__=="__main__":
+    cli(["run-performances-analysis", '-p', 'positions.csv'])
